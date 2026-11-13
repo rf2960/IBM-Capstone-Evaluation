@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pandas as pd
+
 from .constants import PROTOCOL_VERSION, PRIMARY_SCORECARD_COLUMNS, PREDICTION_REQUIRED_COLUMNS
 
 
@@ -41,4 +43,143 @@ def protocol_specification() -> dict:
         "prediction_optional_audit_columns": ["model_version", "prompt_version"],
         "change_policy": "future changes must be versioned and labeled secondary unless a defect is demonstrated",
     }
+
+
+def metric_claim_specification() -> pd.DataFrame:
+    """Frozen metric definitions and the claim boundary for each one."""
+    columns = [
+        "metric",
+        "research_role",
+        "inputs",
+        "calculation",
+        "denominator",
+        "censoring_or_missing_rule",
+        "known_failure_case",
+        "supported_conclusion",
+        "requires_additional_evidence",
+    ]
+    rows = [
+        (
+            "prediction_coverage",
+            "Output reliability",
+            "Requested examples and scoreable model outputs",
+            "scoreable outputs / requested examples",
+            "All requested examples",
+            "Missing, invalid, or failed outputs remain in the denominator",
+            "High coverage does not imply accurate predictions",
+            "Whether the system returned a scoreable prediction consistently",
+            "Correctness, usefulness, or latency acceptability",
+        ),
+        (
+            "exact_match",
+            "Immediate full-state match",
+            "Predicted full text and observed target text",
+            "Count of byte-for-byte equal predictions and targets / scoreable outputs",
+            "Scoreable predictions",
+            "Failed outputs reduce coverage and are not silently added to the accuracy denominator",
+            "One observed target is not the only potentially valid edit; no-edit cases can dominate",
+            "Whether the predicted file exactly matches the recorded state at the chosen horizon",
+            "Semantic correctness, intent, or whether an alternative edit was valid",
+        ),
+        (
+            "exact_match_within_future_window",
+            "Later-state timing sensitivity",
+            "Prediction and the next k recorded states",
+            "Tasks where prediction equals any state in the fixed future window / all tasks",
+            "All tasks at the anchor; k must be reported",
+            "Only available recorded states are searched; no missing state is imputed",
+            "A later match may be coincidence and does not prove the edit was useful when suggested",
+            "Whether strict next-state mismatch is plausibly explained by recorded timing",
+            "Causal timing error, developer acceptance, or time saved",
+        ),
+        (
+            "location_content_edit_f1",
+            "Immediate next-edit match",
+            "Line edit blocks from current-to-prediction and current-to-target",
+            "Global one-to-one location-and-content credit, converted to micro precision/recall/F1",
+            "All predicted and observed edit blocks on scoreable tasks",
+            "No-edit tasks contain no positive reference blocks; abstention is evaluated separately",
+            "Partial similarity can reward a plausible but semantically wrong edit",
+            "Whether the model recovers the observed edit content near the observed location",
+            "Semantic correctness, executability, or developer preference",
+        ),
+        (
+            "content_location_operation_f1_diagnostics",
+            "Failure decomposition",
+            "The same predicted and observed line edit blocks",
+            "Separate micro F1 scores using payload, source location, or edit operation credit",
+            "All predicted and observed edit blocks on scoreable tasks",
+            "No positive edit class yields no recall denominator",
+            "A high component score can coexist with a low joint score",
+            "Whether failure is primarily content, placement, or insert/delete/replace mismatch",
+            "That any one component alone makes an edit correct",
+        ),
+        (
+            "false_intervention_rate",
+            "Unnecessary intervention",
+            "Observed no-edit targets and predicted edit blocks",
+            "No-edit targets receiving at least one predicted edit / observed no-edit targets",
+            "Scoreable tasks with no observed edit block",
+            "Whitespace-normalized no-edit is fixed by protocol",
+            "An unrecorded but useful proactive edit is still counted as intervention",
+            "How often the model changes code when the recorded next state does not",
+            "Whether every intervention was harmful to the developer",
+        ),
+        (
+            "pooled_rework_reduction",
+            "Remaining text work",
+            "Line costs current-to-target and prediction-to-target",
+            "(total required line cost - total remaining line cost) / total required line cost",
+            "Total current-to-target line cost over changed targets",
+            "No-edit targets are reported separately as unnecessary change lines",
+            "Line count is insensitive to semantic difficulty and developer time",
+            "Whether prediction moves recorded targets closer under a transparent text proxy",
+            "Actual time saved, semantic correctness, or production utility",
+        ),
+        (
+            "mean_durability",
+            "Retention of the prediction",
+            "Predicted edit payload and up to five later recorded states",
+            "Mean weighted near-location retention of predicted payloads",
+            "Tasks with a non-empty predicted edit and at least one later observation",
+            "No predicted edit has no durability score; shorter follow-up contributes fewer states",
+            "Similar text can survive for reasons unrelated to the predicted edit",
+            "Whether predicted text remains visible near its original location",
+            "That persistence means correctness or usefulness",
+        ),
+        (
+            "reference_reversion_rate",
+            "Observed strict reversion",
+            "Current, edited target, and the immediately following recorded state",
+            "Edited targets whose next state exactly returns to current / eligible edited targets",
+            "Horizon-1 edited targets with one follow-up state",
+            "Edited targets without follow-up are censored, not labeled non-reverting",
+            "Misses partial, moved, or semantic reversions",
+            "Frequency of exact one-step return in the observed reference trajectory",
+            "A model quality claim; this is a dataset diagnostic",
+        ),
+        (
+            "stable_f1",
+            "Trajectory-aware durable edit match",
+            "Prediction, observed target edits, and the required consecutive future states",
+            "Location-and-content F1 after restricting reference blocks to those that persist",
+            "Predicted blocks and stable reference blocks on persistence-eligible tasks",
+            "Insufficient follow-up is censored; two states is primary, three and five are sensitivity checks",
+            "The persistence rule can miss refactors or semantically retained changes that move",
+            "Whether predicted edits match observed edits that remain under the fixed rule",
+            "Semantic correctness, causal usefulness, or developer intent",
+        ),
+        (
+            "temporary_credit_share",
+            "Immediate-versus-durable disagreement",
+            "Immediate and stable location-content match credit on the same eligible tasks",
+            "(immediate matched credit - stable matched credit) / immediate matched credit",
+            "Immediate matched credit on persistence-eligible tasks",
+            "Undefined when a model earns zero immediate credit; censored tasks are excluded",
+            "Depends on the fixed persistence rule and is not a causal label of abandoned intent",
+            "How much immediate edit-match credit is unavailable after requiring observed persistence",
+            "Why the edit disappeared or whether the developer rejected it",
+        ),
+    ]
+    return pd.DataFrame(rows, columns=columns)
 

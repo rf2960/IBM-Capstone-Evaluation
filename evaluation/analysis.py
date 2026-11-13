@@ -1045,3 +1045,181 @@ def source_model_heterogeneity(
         )
     return pd.DataFrame(rows).sort_values("n_tasks", ascending=False).reset_index(drop=True)
 
+
+def temporary_reward_audit(
+    detailed: pd.DataFrame,
+    *,
+    cohort: str = "strict_no_missing_states",
+    horizon: int = 1,
+) -> pd.DataFrame:
+    """Compare immediate edit credit with credit restricted to stable edits.
+
+    The comparison uses the same persistence-eligible tasks. Insufficient
+    follow-up is reported as censored and is never relabeled as instability.
+    """
+    required = {
+        "cohort",
+        "horizon",
+        "model_name",
+        "scored",
+        "persistence_eligible",
+        "persistence_censored",
+        "observed_edit_blocks",
+        "predicted_edit_blocks",
+        "persistence_observed_blocks",
+        "stable_reference_blocks",
+        "stable_predicted_blocks",
+        "matched_edit_credit",
+        "stable_match_credit",
+        "exact_match",
+    }
+    missing = required - set(detailed.columns)
+    if missing:
+        raise ValueError(f"Detailed scores are missing columns: {sorted(missing)}")
+
+    data = detailed[
+        (detailed["cohort"] == cohort) & (detailed["horizon"] == horizon)
+    ]
+    rows = []
+    for model_name, group in data.groupby("model_name", sort=False):
+        scored = group[group["scored"]]
+        eligible = scored[scored["persistence_eligible"]]
+        censored = scored[scored["persistence_censored"]]
+        changed = eligible[eligible["observed_edit_blocks"] > 0]
+        exact_changed = changed[changed["exact_match"]]
+
+        immediate_credit = float(eligible["matched_edit_credit"].sum())
+        stable_credit = float(eligible["stable_match_credit"].sum())
+        temporary_credit = max(0.0, immediate_credit - stable_credit)
+        observed_blocks = int(eligible["persistence_observed_blocks"].sum())
+        predicted_blocks = int(eligible["predicted_edit_blocks"].sum())
+        stable_reference_blocks = int(eligible["stable_reference_blocks"].sum())
+        stable_predicted_blocks = int(eligible["stable_predicted_blocks"].sum())
+        immediate_f1 = prf_from_credit(
+            immediate_credit, predicted_blocks, observed_blocks
+        )[2]
+        stable_f1 = prf_from_credit(
+            stable_credit, stable_predicted_blocks, stable_reference_blocks
+        )[2]
+        exact_with_any_transient = exact_changed[
+            exact_changed["stable_reference_blocks"]
+            < exact_changed["persistence_observed_blocks"]
+        ]
+        exact_with_only_transient = exact_changed[
+            exact_changed["stable_reference_blocks"] == 0
+        ]
+
+        rows.append(
+            {
+                "cohort": cohort,
+                "horizon": horizon,
+                "baseline": model_name,
+                "persistence_min_consecutive": (
+                    int(eligible["persistence_min_consecutive"].iloc[0])
+                    if len(eligible)
+                    else 2
+                ),
+                "persistence_eligible_tasks": len(eligible),
+                "persistence_censored_tasks": len(censored),
+                "eligible_changed_tasks": len(changed),
+                "eligible_observed_blocks": observed_blocks,
+                "stable_reference_blocks": stable_reference_blocks,
+                "immediate_matched_credit": immediate_credit,
+                "stable_matched_credit": stable_credit,
+                "temporary_credit_gap": temporary_credit,
+                "temporary_credit_share": (
+                    temporary_credit / immediate_credit
+                    if immediate_credit
+                    else float("nan")
+                ),
+                "immediate_location_content_f1": immediate_f1,
+                "trajectory_aware_stable_f1": stable_f1,
+                "exact_changed_target_matches": len(exact_changed),
+                "exact_matches_with_any_transient_reference": len(
+                    exact_with_any_transient
+                ),
+                "exact_matches_with_only_transient_reference": len(
+                    exact_with_only_transient
+                ),
+                "exact_any_transient_rate": (
+                    len(exact_with_any_transient) / len(exact_changed)
+                    if len(exact_changed)
+                    else float("nan")
+                ),
+                "exact_only_transient_rate": (
+                    len(exact_with_only_transient) / len(exact_changed)
+                    if len(exact_changed)
+                    else float("nan")
+                ),
+            }
+        )
+    return pd.DataFrame(rows)
+
+
+def temporary_reward_cases(
+    sessions: list[dict],
+    detailed: pd.DataFrame,
+    *,
+    model_name: str = "repeat_last_edit",
+    predictor=None,
+    cohort: str = "strict_no_missing_states",
+    horizon: int = 1,
+    limit: int = 8,
+) -> pd.DataFrame:
+    """Return concrete cases where immediate match credit disappears later."""
+    if predictor is None:
+        if model_name not in BASELINE_PREDICTORS:
+            raise ValueError("A predictor is required for a non-baseline model")
+        predictor = BASELINE_PREDICTORS[model_name]
+
+    candidates = detailed[
+        (detailed["cohort"] == cohort)
+        & (detailed["horizon"] == horizon)
+        & (detailed["model_name"] == model_name)
+        & detailed["scored"]
+        & detailed["persistence_eligible"]
+        & (
+            detailed["matched_edit_credit"]
+            > detailed["stable_match_credit"] + 1e-12
+        )
+    ].copy()
+    candidates["temporary_credit_gap"] = (
+        candidates["matched_edit_credit"] - candidates["stable_match_credit"]
+    )
+    candidates = candidates.sort_values(
+        ["temporary_credit_gap", "example_id"], ascending=[False, True]
+    ).head(limit)
+    task_map = {
+        task["example_id"]: task for task in build_tasks(sessions, horizon)
+    }
+    rows = []
+    for number, record in enumerate(candidates.to_dict("records"), start=1):
+        task = task_map[record["example_id"]]
+        prediction = predictor(task)
+        follow_up = task["future"][1]
+        rows.append(
+            {
+                "case_id": f"T{number:02d}",
+                "example_id": record["example_id"],
+                "session_id": record["session_id"],
+                "anchor": int(record["anchor"]),
+                "immediate_exact_match": bool(record["exact_match"]),
+                "observed_edit_blocks": int(record["observed_edit_blocks"]),
+                "stable_reference_blocks": int(record["stable_reference_blocks"]),
+                "predicted_edit_blocks": int(record["predicted_edit_blocks"]),
+                "immediate_matched_credit": float(record["matched_edit_credit"]),
+                "stable_matched_credit": float(record["stable_match_credit"]),
+                "temporary_credit_gap": float(record["temporary_credit_gap"]),
+                "current_to_target_diff": compact_diff(
+                    task["current"], task["target"], limit=900
+                ),
+                "target_to_follow_up_diff": compact_diff(
+                    task["target"], follow_up, limit=900
+                ),
+                "prediction_to_target_diff": compact_diff(
+                    prediction, task["target"], limit=900
+                ),
+            }
+        )
+    return pd.DataFrame(rows)
+

@@ -6,9 +6,9 @@ from pathlib import Path
 import pandas as pd
 
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "legacy"))
 
-from evaluation_core import (  # noqa: E402
+from evaluation_core_original import (  # noqa: E402
     CASE_AUDIT_DECISIONS,
     ERROR_TAXONOMY,
     PREDICTION_REQUIRED_COLUMNS,

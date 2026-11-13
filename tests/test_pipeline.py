@@ -6,8 +6,13 @@ import pandas as pd
 
 from evaluation.config import load_config
 from evaluation.datasets import load_dataset
-from evaluation.metrics import METRIC_REGISTRY, aggregate_prediction_scores, register_metric_group
+from evaluation.metrics import (
+    METRIC_REGISTRY, aggregate_prediction_scores, register_metric_group,
+    score_prediction,
+)
 from evaluation.predictors import BASELINE_PREDICTORS, BaselinePredictor
+from evaluation.analysis import temporary_reward_audit, temporary_reward_cases
+from evaluation.protocol import metric_claim_specification
 from evaluation.runner import (
     generate_predictions, evaluate_predictors_detailed,
     evaluate_external_predictions, run_experiment,
@@ -115,3 +120,47 @@ def test_json_configuration_supported(tmp_path):
     path = tmp_path / 'config.json'
     path.write_text(json.dumps(config))
     assert load_config(path).evaluation.metrics == ('immediate',)
+
+
+def test_metric_claim_specification_covers_trajectory_aware_decisions():
+    specification = metric_claim_specification().set_index('metric')
+    required = {
+        'exact_match', 'exact_match_within_future_window',
+        'location_content_edit_f1', 'false_intervention_rate',
+        'pooled_rework_reduction', 'mean_durability',
+        'reference_reversion_rate', 'stable_f1', 'temporary_credit_share',
+    }
+    assert required.issubset(specification.index)
+    assert not specification.isna().any().any()
+    assert specification['denominator'].str.len().gt(0).all()
+    assert specification['requires_additional_evidence'].str.len().gt(0).all()
+
+
+def test_temporary_reward_audit_separates_immediate_and_stable_credit():
+    source = [
+        {'session_id': 'stable',
+         'states': ['old\n', 'base\n', 'base\nx\n', 'base\nx\n']},
+        {'session_id': 'temporary',
+         'states': ['old\n', 'base\n', 'base\nx\n', 'base\n']},
+    ]
+    tasks = [task for task in build_tasks(source, 1)]
+    detailed = pd.DataFrame([
+        score_prediction(
+            task, task['target'], cohort='test', model_name='copy_target'
+        )
+        for task in tasks
+    ])
+    audit = temporary_reward_audit(detailed, cohort='test', horizon=1).iloc[0]
+    assert audit['persistence_eligible_tasks'] == 2
+    assert audit['immediate_matched_credit'] == 2.0
+    assert audit['stable_matched_credit'] == 1.0
+    assert audit['temporary_credit_share'] == 0.5
+    assert audit['exact_matches_with_only_transient_reference'] == 1
+
+    cases = temporary_reward_cases(
+        source, detailed, model_name='copy_target',
+        predictor=lambda task: task['target'], cohort='test', limit=5,
+    )
+    assert len(cases) == 1
+    assert bool(cases.iloc[0]['immediate_exact_match'])
+    assert cases.iloc[0]['stable_matched_credit'] == 0.0

@@ -2,6 +2,14 @@
 
 A minimal refactor of the supplied **`evaluation_core.py`** into a reusable, configurable trajectory-aware evaluation pipeline. Existing frozen metrics retain their definitions. This repository includes the original code at `legacy/evaluation_core_original.py` for reference and comparison.
 
+## Contribution history
+
+- **Ruochen Feng** built the original evaluation workbench: frozen protocol and prediction contract, heuristic baselines, edit matching, intervention/rework/persistence metrics, grouped split and bootstrap, case/reconstructability audits, source-model heterogeneity checks, and the temporary-edit reward analysis.
+- **Jiayi Ong** reorganized that work into the modular `evaluation/` package, adding configuration-driven experiments, reusable model adapters, a metric registry, CLI workflow, parity tests, and extension scaffolding.
+- The integration preserves the original implementation and report under `legacy/` and `docs/`, keeps Jiayi's refactor as a distinct commit, and ports the latest temporary-edit and metric-claim work into the modular API.
+
+The public repository intentionally excludes the real DECODE data and generated outputs. Only toy trajectories are included under `examples/`.
+
 ## What was already good
 
 The original evaluation had a useful and carefully defined foundation: line-diff/edit-block extraction; **one-to-one optimal matching** of location/content; separate immediate, false-intervention, rework, durability and **stable F1** metrics; explicit denominators and censored follow-up; a **frozen protocol**; and an external prediction-table contract. It also contained trajectory-level bootstrap, validity/case-review tools, stress cases, and descriptive breakdowns. These functions were mostly **moved, not redesigned**.
