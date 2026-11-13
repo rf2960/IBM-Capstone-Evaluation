@@ -1,0 +1,22 @@
+# After running configs/baseline.yaml, reuse model outputs without inference.
+experiment: rescore_saved_predictions
+
+dataset:
+  type: curated
+  path: examples/curated_sessions.jsonl
+  cohort: curated
+
+models:
+  - type: file
+    name: saved_no_change
+    path: results/baseline_comparison/predictions.csv
+    source_model_name: no_change
+
+evaluation:
+  horizons: [1, 2]
+  metrics: [immediate, intervention, rework, persistence]
+  persistence_min_consecutive: 2
+
+output:
+  directory: results/rescored
+  save_predictions: true

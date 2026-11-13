@@ -1,0 +1,2 @@
+{"session_id":"example_01","states":["a = 1\n", "a = 2\n", "a = 2\nb = 3\n", "a = 2\nb = 3\nprint(b)\n", "a = 2\nb = 3\nprint(b)\n"]}
+{"session_id":"example_02","states":["def f(x):\n    return x\n", "def f(x):\n    return x + 1\n", "def f(x):\n    return x + 2\n", "def f(x):\n    return x + 2\n", "def f(x):\n    return x + 2\n"]}

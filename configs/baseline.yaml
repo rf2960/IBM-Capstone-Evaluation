@@ -1,0 +1,22 @@
+# Example: requires curated trajectories at the sample path.
+experiment: baseline_comparison
+
+dataset:
+  type: curated
+  path: examples/curated_sessions.jsonl
+  cohort: curated
+
+models:
+  - type: baseline
+    name: no_change
+  - type: baseline
+    name: repeat_last_edit
+
+evaluation:
+  horizons: [1, 2]
+  metrics: [immediate, intervention, rework, persistence]
+  persistence_min_consecutive: 2
+
+output:
+  directory: results/baseline_comparison
+  save_predictions: true

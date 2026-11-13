@@ -1,0 +1,26 @@
+# Optional GPU dependencies: pip install -e '.[models]'
+# Replace model_id / adapter_path with actual compatible checkpoints.
+experiment: tuned_model_trial
+
+dataset:
+  type: curated
+  path: examples/curated_sessions.jsonl
+  cohort: curated
+
+models:
+  - type: hf
+    name: my_tuned_model
+    model_id: /path/to/base_model
+    adapter_path: /path/to/peft_adapter
+    max_new_tokens: 512
+    prompt_version: v1
+    # device_map: auto
+
+evaluation:
+  horizons: [1]
+  metrics: [immediate, intervention, rework, persistence]
+  persistence_min_consecutive: 2
+
+output:
+  directory: results/tuned_model_trial
+  save_predictions: true

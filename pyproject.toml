@@ -1,0 +1,18 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "nep-evaluation"
+version = "0.1.0"
+description = "Minimal modular trajectory-aware next-edit evaluation"
+requires-python = ">=3.10"
+dependencies = ["numpy>=1.23", "pandas>=1.5", "scipy>=1.9", "PyYAML>=6"]
+
+[project.optional-dependencies]
+parquet = ["pyarrow>=12"]
+models = ["torch>=2", "transformers>=4.40", "peft>=0.10", "accelerate>=0.28"]
+test = ["pytest>=7"]
+
+[tool.setuptools]
+packages = ["evaluation"]
